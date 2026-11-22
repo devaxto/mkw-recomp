@@ -794,6 +794,10 @@ uint32_t romfs_entry_type(int *out, const char *path) {
     if (!out) return FS_R_INVALID;
     const char *p = romfs_path_relative(mount_name, path);
     if (!p) return FS_R_PATH_NOT_FOUND;
+    if (!*p) {
+        *out = FS_ENTRY_DIRECTORY;
+        return 0;
+    }
     if (file_index(p) != UINT64_MAX) {
         *out = FS_ENTRY_FILE;
         return 0;
@@ -807,34 +811,55 @@ uint32_t romfs_entry_type(int *out, const char *path) {
     return FS_R_PATH_NOT_FOUND;
 }
 
-// The index holds file paths only, sorted: a folder's entries are the paths that start with "folder/"; the part up to
-// the next '/' names a child folder (consecutive paths share it) or, without one, a file. Added files follow.
-static int list_from(const char *prefix, size_t n, const char *name, uint64_t size, char *last, size_t cap,
-                     int (*add)(const char *, int, uint64_t, void *), void *ctx, int *found) {
-    if (strncmp(name, prefix, n)) return -1;   // past the folder
-    const char *rest = name + n, *slash = strchr(rest, '/');
-    *found = 1;
-    if (!slash) return add(rest, 0, size, ctx);
-    size_t k = (size_t)(slash - rest);
-    if (k >= cap || (!strncmp(last, rest, k) && !last[k])) return 0;   // the same child folder as the last path
-    memcpy(last, rest, k), last[k] = 0;
-    return add(last, 1, 0, ctx);
+// A small child often has just one file. Check the next row before a binary search, keeping those listings linear.
+static uint64_t list_after(uint64_t at, const char *after, int extra) {
+    uint64_t count = extra ? nadded : file_count;
+    if (at >= count || strcmp(extra ? added[at] : entry_name(entry(at)), after) >= 0) return at;
+    return extra ? added_lower(after) : lower(after);
 }
 
+// Merge the original and added paths before emitting children, so a shared subdirectory appears once. Seek past
+// each child's entire subtree in both sorted indexes: listing one child must not walk its 205,665 descendants
+// (tests/runtime/test_romfs_list.py). A file's visible size comes from its overlay when one replaces the original.
 uint32_t romfs_list(const char *path, int (*add)(const char *name, int is_dir, uint64_t size, void *ctx), void *ctx) {
     const char *p = romfs_path_relative(mount_name, path);
     if (!p) return FS_R_PATH_NOT_FOUND;
-    char prefix[4096], last[1024] = "";
+    char prefix[4096];
     if (snprintf(prefix, sizeof prefix, *p ? "%s/" : "%s", p) >= (int)sizeof prefix) return FS_R_INVALID;
     size_t n = strlen(prefix);
-    int found = 0, r = 0;
-    for (uint64_t i = lower(prefix); i < file_count && r == 0; i++) {
-        Entry e = entry(i);
-        r = list_from(prefix, n, entry_name(e), e.size, last, sizeof last, add, ctx, &found);
+    uint64_t i = lower(prefix);
+    size_t k = added_lower(prefix);
+    int found = 0;
+    for (;;) {
+        Entry e = {0};
+        const char *original = i < file_count ? entry_name(e = entry(i)) : NULL;
+        const char *extra = k < nadded ? added[k] : NULL;
+        if (original && strncmp(original, prefix, n)) original = NULL;
+        if (extra && strncmp(extra, prefix, n)) extra = NULL;
+        if (!original && !extra) break;
+        int use_added = !original || (extra && strcmp(extra, original) < 0);
+        const char *name = use_added ? extra : original, *rest = name + n, *slash = strchr(rest, '/');
+        found = 1;
+        if (slash) {
+            char after[4096], child[1024];
+            size_t end = (size_t)(slash - name), len = (size_t)(slash - rest);
+            if (end + 1 >= sizeof after) return FS_R_INVALID;
+            memcpy(after, name, end);
+            after[end] = '/' + 1;   // the first key after every path beginning with this child's "name/"
+            after[end + 1] = 0;
+            i = list_after(i + !use_added, after, 0);
+            k = (size_t)list_after(k + use_added, after, 1);
+            if (len >= sizeof child) continue;
+            memcpy(child, rest, len);
+            child[len] = 0;
+            if (add(child, 1, 0, ctx)) break;
+        } else {
+            uint64_t index = use_added ? file_count + k++ : i++;
+            uint32_t ov = overlay_slot(index);
+            uint64_t size = ov ? overlays[ov - 1].size : e.size;
+            if (add(rest, 0, size, ctx)) break;
+        }
     }
-    last[0] = 0;
-    for (size_t k = added_lower(prefix); k < nadded && r >= 0; k++)
-        if ((r = list_from(prefix, n, added[k], 0, last, sizeof last, add, ctx, &found)) > 0) break;
     return found || !*p ? 0 : FS_R_PATH_NOT_FOUND;
 }
 

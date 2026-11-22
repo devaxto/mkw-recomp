@@ -18,14 +18,14 @@ static inline int romfs_path_valid_relative(const char *path) {
     return 1;
 }
 
-// "<mount>:/<path>" -> "<path>", or NULL. Audio stream requests join a mount root and a leading-slash resource,
-// producing "content://Sound/...": repeated root separators are skipped; traversal, backslashes and empty interior
-// components are still rejected.
+// "<mount>:/<path>" -> "<path>" (empty for the mount root), or NULL. Audio stream requests join a mount root and
+// a leading-slash resource, producing "content://Sound/...": repeated root separators are skipped; traversal,
+// backslashes and empty interior components are still rejected.
 static inline const char *romfs_path_relative(const char *mount, const char *path) {
     if (!mount || !*mount || !path) return NULL;
     size_t size = strlen(mount);
     if (strncmp(path, mount, size) || path[size] != ':' || path[size + 1] != '/') return NULL;
     path += size + 2;
     while (*path == '/') ++path;
-    return romfs_path_valid_relative(path) ? path : NULL;
+    return !*path || romfs_path_valid_relative(path) ? path : NULL;
 }
