@@ -34,7 +34,7 @@ uint32_t romfs_read(uint64_t *out, uint64_t h, int64_t offset, void *buffer, uin
 uint32_t romfs_size(int64_t *out, uint64_t h);
 void romfs_close(uint64_t h);
 uint32_t romfs_entry_type(int *out, const char *path);
-// The entries right under a RomFS folder, in name order: add(name, is_dir, size, ctx) for each (a nonzero return
+// The entries right under a RomFS folder, in index path order: add(name, is_dir, size, ctx) for each (a nonzero return
 // stops). FS_R_PATH_NOT_FOUND when nothing lies under it.
 uint32_t romfs_list(const char *path, int (*add)(const char *name, int is_dir, uint64_t size, void *ctx), void *ctx);
 uint64_t romfs_file_count(void);                           // files in the index (fs_init first)

@@ -1321,7 +1321,7 @@ static void probe_paths(void) {
         {"rom:/a/b.bin", "a/b.bin"}, {"rom://a/b.bin", "a/b.bin"}, {"rom:///a/b.bin", "a/b.bin"},
         {"rom:/a", "a"},             {"rom:/../main", NULL},       {"rom://../a", NULL},
         {"rom:/a/../b", NULL},       {"rom:/a/./b", NULL},         {"rom:/a//b", NULL},
-        {"rom:/a\\b", NULL},         {"rom:/", NULL},              {"rom://", NULL},
+        {"rom:/a\\b", NULL},         {"rom:/", ""},                {"rom://", ""},
         {"rom:a", NULL},             {"ro:/a", NULL},              {"romx:/a", NULL},
         {"rom:/.", NULL},            {"rom:/..", NULL},            {"ROM:/a", NULL},
     };
